@@ -30,7 +30,7 @@ class Game {
         // Systems
         this.ui = new UI();
         this.map = new Map(this.scene);
-        this.weapons = new WeaponSystem(this.scene, this.camera);
+        this.weapons = new WeaponSystem(this.scene, this.camera, this.ui);
         this.player = new Player(this.camera, this.scene, this.weapons);
 
         // Handle window resize
