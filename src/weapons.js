@@ -18,11 +18,43 @@ export class WeaponSystem {
                 fireRate: 400, // RPM
                 lastFireTime: 0,
                 reloadTime: 2000, // ms
-                isReloading: false
+                isReloading: false,
+                isAutomatic: false
+            },
+            {
+                name: 'AR-17 Vanguard',
+                type: 'rifle',
+                damage: 22,
+                headshotMultiplier: 2,
+                clipSize: 30,
+                currentClip: 30,
+                totalAmmo: 120,
+                fireRate: 650, // RPM
+                lastFireTime: 0,
+                reloadTime: 2500, // ms
+                isReloading: false,
+                isAutomatic: true
+            },
+            {
+                name: 'Breacher-870',
+                type: 'shotgun',
+                damage: 15, // per pellet
+                pellets: 8,
+                spread: 0.1,
+                headshotMultiplier: 1.5,
+                clipSize: 7,
+                currentClip: 7,
+                totalAmmo: 28,
+                fireRate: 70, // RPM
+                lastFireTime: 0,
+                reloadTime: 3500, // ms
+                isReloading: false,
+                isAutomatic: false
             }
         ];
         
         this.currentWeaponIndex = 0;
+        this.isFiring = false;
         this.raycaster = new THREE.Raycaster();
         
         // UI elements for feedback
@@ -38,19 +70,44 @@ export class WeaponSystem {
         // Listen for mouse clicks
         document.addEventListener('mousedown', (e) => {
             if (e.button === 0 && document.pointerLockElement === document.body) { // Left click + pointer lock
-                this.fire();
+                this.isFiring = true;
+                const weapon = this.weapons[this.currentWeaponIndex];
+                if (!weapon.isAutomatic) {
+                    this.fire();
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (e.button === 0) {
+                this.isFiring = false;
             }
         });
         
-        // Listen for R key
+        // Listen for keys
         document.addEventListener('keydown', (e) => {
             if (e.code === 'KeyR') {
                 this.reload();
             }
+            if (e.code === 'Digit1') this.switchWeapon(0);
+            if (e.code === 'Digit2') this.switchWeapon(1);
+            if (e.code === 'Digit3') this.switchWeapon(2);
         });
 
         // Add Hit Marker to DOM
         this.createHitMarkerUI();
+    }
+
+    switchWeapon(index) {
+        if (index >= 0 && index < this.weapons.length && index !== this.currentWeaponIndex) {
+            const currentWeapon = this.weapons[this.currentWeaponIndex];
+            if (currentWeapon.isReloading) return;
+            
+            this.currentWeaponIndex = index;
+            this.isFiring = false;
+            console.log(`Switched to ${this.weapons[index].name}`);
+            this.updateUI();
+        }
     }
 
     createHitMarkerUI() {
@@ -73,10 +130,14 @@ export class WeaponSystem {
     updateUI() {
         const weapon = this.weapons[this.currentWeaponIndex];
         this.ui.updateAmmo(weapon.currentClip, weapon.totalAmmo);
+        this.ui.updateWeaponName(weapon.name);
     }
 
     update(delta) {
-        // Handle animations or cleanup if needed
+        const weapon = this.weapons[this.currentWeaponIndex];
+        if (this.isFiring && weapon.isAutomatic) {
+            this.fire();
+        }
     }
 
     fire() {
@@ -100,8 +161,24 @@ export class WeaponSystem {
         // Crosshair shrink feedback
         this.animateCrosshair();
 
-        // Raycasting from camera center
-        this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+        if (weapon.type === 'shotgun') {
+            for (let i = 0; i < weapon.pellets; i++) {
+                this.shootRay(weapon, true);
+            }
+        } else {
+            this.shootRay(weapon, false);
+        }
+    }
+
+    shootRay(weapon, isSpread) {
+        const spread = isSpread ? weapon.spread : 0;
+        
+        // Random spread
+        const spreadX = (Math.random() - 0.5) * spread;
+        const spreadY = (Math.random() - 0.5) * spread;
+
+        // Raycasting from camera center + spread
+        this.raycaster.setFromCamera(new THREE.Vector2(spreadX, spreadY), this.camera);
         const intersects = this.raycaster.intersectObjects(this.scene.children, true);
 
         let hitPoint = null;
@@ -126,6 +203,11 @@ export class WeaponSystem {
         } else {
             const direction = new THREE.Vector3();
             this.camera.getWorldDirection(direction);
+            // Apply spread to direction for tracer
+            const spreadVec = new THREE.Vector3(spreadX, spreadY, 0);
+            spreadVec.applyQuaternion(this.camera.quaternion);
+            direction.add(spreadVec).normalize();
+            
             hitPoint = this.camera.position.clone().add(direction.multiplyScalar(100));
         }
 
@@ -176,6 +258,9 @@ export class WeaponSystem {
         });
 
         if (object.userData.health <= 0) {
+            // Dispatch event for score
+            window.dispatchEvent(new CustomEvent('enemy-killed', { detail: { name: object.name } }));
+            
             setTimeout(() => {
                 this.scene.remove(object);
             }, 200);

@@ -49,10 +49,6 @@ export class Map {
         // --- INTERIOR WALLS ---
         this.createBox(50, 4, 0.5, -10, 2, -10, 0x333333, "Divider-1");
         this.createBox(50, 4, 0.5, 10, 2, 10, 0x333333, "Divider-2");
-
-        // Targets
-        this.createTargetDummy(-15, 0, -17, "Target-A");
-        this.createTargetDummy(15, 0, 17, "Target-B");
     }
 
     createBox(w, h, d, x, y, z, color, name) {
