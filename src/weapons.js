@@ -11,12 +11,13 @@ export class WeaponSystem {
                 name: 'Sidearm-S9',
                 type: 'pistol',
                 damage: 35,
+                headshotMultiplier: 2,
                 clipSize: 12,
                 currentClip: 12,
-                totalAmmo: 36,
+                totalAmmo: 90,
                 fireRate: 400, // RPM
                 lastFireTime: 0,
-                reloadTime: 1500, // ms
+                reloadTime: 2000, // ms
                 isReloading: false
             }
         ];
@@ -24,8 +25,8 @@ export class WeaponSystem {
         this.currentWeaponIndex = 0;
         this.raycaster = new THREE.Raycaster();
         
-        // Shootable objects
-        this.shootableObjects = [];
+        // UI elements for feedback
+        this.hitMarkerTimeout = null;
         
         this.init();
     }
@@ -47,6 +48,26 @@ export class WeaponSystem {
                 this.reload();
             }
         });
+
+        // Add Hit Marker to DOM
+        this.createHitMarkerUI();
+    }
+
+    createHitMarkerUI() {
+        const marker = document.createElement('div');
+        marker.id = 'hit-marker';
+        marker.innerHTML = '╳';
+        marker.style.position = 'absolute';
+        marker.style.top = '50%';
+        marker.style.left = '50%';
+        marker.style.transform = 'translate(-50%, -50%) scale(0)';
+        marker.style.color = '#ff0000';
+        marker.style.fontSize = '24px';
+        marker.style.fontWeight = 'bold';
+        marker.style.pointerEvents = 'none';
+        marker.style.transition = 'transform 0.1s ease-out';
+        marker.style.zIndex = '1000';
+        document.getElementById('ui-layer').appendChild(marker);
     }
 
     updateUI() {
@@ -55,7 +76,7 @@ export class WeaponSystem {
     }
 
     update(delta) {
-        // Cleanup old tracers or update animations
+        // Handle animations or cleanup if needed
     }
 
     fire() {
@@ -63,7 +84,6 @@ export class WeaponSystem {
         
         if (weapon.isReloading) return;
         if (weapon.currentClip <= 0) {
-            console.log("Out of ammo!");
             this.reload();
             return;
         }
@@ -77,12 +97,11 @@ export class WeaponSystem {
         weapon.currentClip--;
         this.updateUI();
 
-        console.log(`Fired ${weapon.name}! Ammo: ${weapon.currentClip}/${weapon.totalAmmo}`);
+        // Crosshair shrink feedback
+        this.animateCrosshair();
 
-        // Raycasting
+        // Raycasting from camera center
         this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
-        
-        // For now, raycast against everything in the scene
         const intersects = this.raycaster.intersectObjects(this.scene.children, true);
 
         let hitPoint = null;
@@ -90,16 +109,21 @@ export class WeaponSystem {
             const hit = intersects[0];
             hitPoint = hit.point;
             
-            if (hit.object.userData.isShootable) {
-                this.handleHit(hit.object, weapon.damage);
+            // Check for shootable
+            let target = hit.object;
+            while(target && !target.userData.isShootable && target.parent) {
+                target = target.parent;
+            }
+
+            if (target && target.userData.isShootable) {
+                const isHeadshot = hit.object.name === "Head";
+                const damage = isHeadshot ? weapon.damage * weapon.headshotMultiplier : weapon.damage;
+                this.handleHit(target, damage);
+                this.showHitMarker();
             }
             
-            console.log("Hit:", hit.object.name || "Object", "at", hit.point);
-            
-            // Hit feedback
             this.createHitFeedback(hit.point, hit.face ? hit.face.normal : new THREE.Vector3(0, 1, 0));
         } else {
-            // Default hit point far away if nothing hit
             const direction = new THREE.Vector3();
             this.camera.getWorldDirection(direction);
             hitPoint = this.camera.position.clone().add(direction.multiplyScalar(100));
@@ -108,41 +132,57 @@ export class WeaponSystem {
         this.createTracer(this.camera.position, hitPoint);
     }
 
+    animateCrosshair() {
+        const crosshair = document.getElementById('crosshair');
+        if (!crosshair) return;
+        crosshair.style.transform = 'translate(-50%, -50%) scale(0.7)';
+        setTimeout(() => {
+            crosshair.style.transform = 'translate(-50%, -50%) scale(1)';
+        }, 50);
+    }
+
+    showHitMarker() {
+        const marker = document.getElementById('hit-marker');
+        if (!marker) return;
+        
+        clearTimeout(this.hitMarkerTimeout);
+        marker.style.transform = 'translate(-50%, -50%) scale(1)';
+        
+        this.hitMarkerTimeout = setTimeout(() => {
+            marker.style.transform = 'translate(-50%, -50%) scale(0)';
+        }, 150);
+    }
+
     handleHit(object, damage) {
-        if (!object.userData.health) return;
+        if (object.userData.health === undefined) return;
         
         object.userData.health -= damage;
-        console.log(`${object.name} took ${damage} damage. Health remaining: ${object.userData.health}`);
+        console.log(`${object.name} hit! Damage: ${damage}. Health: ${object.userData.health}`);
         
-        if (object.userData.health <= 0) {
-            console.log(`${object.name} destroyed!`);
-            // Flash red or something
-            if (object.material && object.material.color) {
-                const originalColor = object.material.color.clone();
-                object.material.color.set(0xff0000);
+        // Visual feedback on the object
+        const meshes = [];
+        object.traverse(child => { if(child.isMesh) meshes.push(child); });
+        
+        meshes.forEach(mesh => {
+            if (mesh.material && mesh.material.color) {
+                const originalColor = mesh.material.color.clone();
+                mesh.material.color.set(object.userData.health <= 0 ? 0xff0000 : 0xffffff);
                 setTimeout(() => {
-                    if (object.parent) {
-                        this.scene.remove(object);
+                    if (object.userData.health > 0) {
+                        mesh.material.color.copy(originalColor);
                     }
-                }, 200);
-            } else {
+                }, 100);
+            }
+        });
+
+        if (object.userData.health <= 0) {
+            setTimeout(() => {
                 this.scene.remove(object);
-            }
-        } else {
-            // Flash briefly on hit
-            if (object.material && object.material.color) {
-                const originalColor = object.material.color.clone();
-                object.material.color.set(0xffffff);
-                setTimeout(() => {
-                    object.material.color.copy(originalColor);
-                }, 50);
-            }
+            }, 200);
         }
     }
 
     createTracer(start, end) {
-        // Simple line tracer
-        // Start muzzle position slightly offset from camera
         const muzzleOffset = new THREE.Vector3(0.2, -0.2, -0.5);
         muzzleOffset.applyQuaternion(this.camera.quaternion);
         const muzzlePos = this.camera.position.clone().add(muzzleOffset);
@@ -154,10 +194,9 @@ export class WeaponSystem {
         
         this.scene.add(line);
 
-        // Fade out and remove
         let opacity = 0.8;
         const fade = () => {
-            opacity -= 0.1;
+            opacity -= 0.16; // Faster fade to hit ~100ms (20ms * 5 steps = 100ms)
             line.material.opacity = opacity;
             if (opacity > 0) {
                 setTimeout(fade, 20);
@@ -171,7 +210,6 @@ export class WeaponSystem {
     }
 
     createHitFeedback(point, normal) {
-        // Simple spark/impact effect
         const geometry = new THREE.SphereGeometry(0.05, 8, 8);
         const material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
         const spark = new THREE.Mesh(geometry, material);

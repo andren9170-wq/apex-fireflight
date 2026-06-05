@@ -7,6 +7,8 @@ import { WeaponSystem } from './weapons.js';
 class Game {
     constructor() {
         this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x111111);
+        this.scene.fog = new THREE.Fog(0x111111, 0, 100);
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -20,12 +22,18 @@ class Game {
 
     async init() {
         // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(10, 20, 10);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        directionalLight.position.set(20, 50, 20);
+        directionalLight.castShadow = true;
         this.scene.add(directionalLight);
+
+        // Add a second light for better coverage
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+        fillLight.position.set(-20, 30, -20);
+        this.scene.add(fillLight);
 
         // Systems
         this.ui = new UI();
