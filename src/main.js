@@ -3,6 +3,7 @@ import { Player } from './player.js';
 import { Map } from './map.js';
 import { UI } from './ui.js';
 import { WeaponSystem } from './weapons.js';
+import { Bot } from './bot.js';
 
 class Game {
     constructor() {
@@ -17,7 +18,28 @@ class Game {
 
         this.clock = new THREE.Clock();
         
+        // Game State
+        this.kills = 0;
+        this.deaths = 0;
+        this.roundTime = 120; // 2 minutes
+        this.isRoundActive = true;
+        
+        this.initEventListeners();
         this.init();
+    }
+
+    initEventListeners() {
+        window.addEventListener('enemy-killed', (e) => {
+            this.kills++;
+            this.ui.updateScore(this.kills, this.deaths);
+            console.log(`Enemy Killed! Total Kills: ${this.kills}`);
+        });
+
+        window.addEventListener('player-died', () => {
+            this.deaths++;
+            this.ui.updateScore(this.kills, this.deaths);
+            console.log(`Player Died! Total Deaths: ${this.deaths}`);
+        });
     }
 
     async init() {
@@ -39,7 +61,11 @@ class Game {
         this.ui = new UI();
         this.map = new Map(this.scene);
         this.weapons = new WeaponSystem(this.scene, this.camera, this.ui);
-        this.player = new Player(this.camera, this.scene, this.weapons);
+        this.player = new Player(this.camera, this.scene, this.weapons, this.ui);
+
+        // Bots
+        this.bots = [];
+        this.spawnBots(5);
 
         // Handle window resize
         window.addEventListener('resize', () => {
@@ -51,15 +77,54 @@ class Game {
         this.animate();
     }
 
+    spawnBots(count) {
+        for (let i = 0; i < count; i++) {
+            const pos = new THREE.Vector3(
+                (Math.random() - 0.5) * 60,
+                0,
+                (Math.random() - 0.5) * 40
+            );
+            const bot = new Bot(this.scene, this.player, pos);
+            this.bots.push(bot);
+        }
+    }
+
     animate() {
         requestAnimationFrame(() => this.animate());
         
         const delta = this.clock.getDelta();
         
+        if (this.isRoundActive) {
+            this.roundTime -= delta;
+            if (this.roundTime <= 0) {
+                this.roundTime = 0;
+                this.isRoundActive = false;
+                this.endRound();
+            }
+            this.ui.updateTimer(Math.ceil(this.roundTime));
+        }
+        
         if (this.player) this.player.update(delta);
         if (this.weapons) this.weapons.update(delta);
         
+        const playerPos = this.player ? this.player.yawObject.position : new THREE.Vector3();
+        this.bots.forEach(bot => bot.update(delta, playerPos));
+        
+        // Filter out dead bots
+        this.bots = this.bots.filter(bot => !bot.isDead);
+        // Respawn bots if needed
+        if (this.bots.length < 5) {
+            this.spawnBots(1);
+        }
+
         this.renderer.render(this.scene, this.camera);
+    }
+
+    endRound() {
+        console.log("Round Ended!");
+        alert(`Round Over! Final Score: K: ${this.kills} | D: ${this.deaths}`);
+        // Reset or something
+        location.reload(); 
     }
 }
 

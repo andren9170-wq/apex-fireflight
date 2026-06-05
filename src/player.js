@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 
 export class Player {
-    constructor(camera, scene, weapons) {
+    constructor(camera, scene, weapons, ui) {
         this.camera = camera;
         this.scene = scene;
         this.weapons = weapons;
+        this.ui = ui;
         
         // Player state
+        this.health = 100;
+        this.isDead = false;
         this.velocity = new THREE.Vector3();
         this.direction = new THREE.Vector3();
         this.moveForward = false;
@@ -85,6 +88,7 @@ export class Player {
     }
 
     update(delta) {
+        if (this.isDead) return;
         if (delta > 0.1) delta = 0.1; // Cap delta to prevent physics glitches
 
         // Apply Gravity
@@ -119,5 +123,35 @@ export class Player {
             this.yawObject.position.y = this.PLAYER_HEIGHT;
             this.canJump = true;
         }
+    }
+
+    takeDamage(amount) {
+        if (this.isDead) return;
+        this.health -= amount;
+        this.ui.updateHealth(Math.max(0, this.health));
+        
+        if (this.health <= 0) {
+            this.die();
+        }
+    }
+
+    die() {
+        this.isDead = true;
+        console.log("Player Died!");
+        // Notify game to increment deaths
+        window.dispatchEvent(new CustomEvent('player-died'));
+        
+        setTimeout(() => {
+            this.respawn();
+        }, 3000);
+    }
+
+    respawn() {
+        this.health = 100;
+        this.isDead = false;
+        this.ui.updateHealth(this.health);
+        this.yawObject.position.set(0, this.PLAYER_HEIGHT, 0); // Spawn at center
+        this.velocity.set(0, 0, 0);
+        console.log("Player Respawned");
     }
 }
