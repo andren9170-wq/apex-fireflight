@@ -15,20 +15,19 @@ export class Player {
         this.moveRight = false;
         this.canJump = false;
         
-        // Physics constants
-        this.WALK_SPEED = 50.0;
-        this.GRAVITY = 30.0;
-        this.JUMP_FORCE = 15.0;
-        this.FRICTION = 10.0;
-        this.PLAYER_HEIGHT = 1.7;
+        // Configurable Constants (Lead Specs)
+        this.WALK_SPEED = 8.0;
+        this.GRAVITY = 25.0;
+        this.JUMP_FORCE = 5.0;
+        this.PLAYER_HEIGHT = 1.7; // Eye height
 
-        // Container for camera rotation
+        // Container for camera rotation (Yaw)
         this.yawObject = new THREE.Object3D();
         this.yawObject.position.y = this.PLAYER_HEIGHT;
         this.yawObject.add(this.camera);
         this.scene.add(this.yawObject);
         
-        // Reset camera local position/rotation
+        // Reset camera local position/rotation (Pitch handles X-axis)
         this.camera.position.set(0, 0, 0);
         this.camera.rotation.set(0, 0, 0);
 
@@ -36,7 +35,6 @@ export class Player {
     }
 
     initControls() {
-        // Keyboard controls
         const onKeyDown = (event) => {
             switch (event.code) {
                 case 'KeyW': this.moveForward = true; break;
@@ -70,52 +68,53 @@ export class Player {
                 const movementX = event.movementX || 0;
                 const movementY = event.movementY || 0;
 
+                // Yaw (Y-axis rotation on parent)
                 this.yawObject.rotation.y -= movementX * 0.002;
+                // Pitch (X-axis rotation on camera, clamped)
                 this.camera.rotation.x -= movementY * 0.002;
-
-                // Clamp pitch
                 this.camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.camera.rotation.x));
             }
         };
 
         document.addEventListener('mousemove', onMouseMove);
 
-        // Pointer lock
+        // Pointer lock trigger
         document.body.addEventListener('click', () => {
             document.body.requestPointerLock();
         });
     }
 
     update(delta) {
-        if (delta > 0.1) delta = 0.1; // Prevent huge jumps on lag
+        if (delta > 0.1) delta = 0.1; // Cap delta to prevent physics glitches
 
-        // Apply friction
-        this.velocity.x -= this.velocity.x * this.FRICTION * delta;
-        this.velocity.z -= this.velocity.z * this.FRICTION * delta;
-
-        // Apply gravity
+        // Apply Gravity
         this.velocity.y -= this.GRAVITY * delta;
 
-        // Calculate movement direction
-        this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
-        this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+        // Calculate Movement Direction
+        const zMove = Number(this.moveForward) - Number(this.moveBackward);
+        const xMove = Number(this.moveRight) - Number(this.moveLeft);
+        
+        this.direction.set(xMove, 0, -zMove); // -z is forward in Three.js
         this.direction.normalize();
 
-        // Apply movement relative to yaw rotation
-        if (this.moveForward || this.moveBackward) {
-            this.velocity.z -= this.direction.z * this.WALK_SPEED * delta;
-        }
-        if (this.moveLeft || this.moveRight) {
-            this.velocity.x -= this.direction.x * this.WALK_SPEED * delta;
+        // Apply Horizontal Movement
+        // We calculate horizontal velocity separately to match the 8 units/sec spec
+        const horizontalVelocity = new THREE.Vector3();
+        if (zMove !== 0 || xMove !== 0) {
+            horizontalVelocity.copy(this.direction).multiplyScalar(this.WALK_SPEED);
         }
 
-        // Apply velocities to yawObject
-        this.yawObject.translateX(-this.velocity.x * delta);
-        this.yawObject.translateZ(this.velocity.z * delta);
+        // Move relative to yawObject orientation
+        // We use the yawObject's quaternion to rotate our movement vector
+        horizontalVelocity.applyQuaternion(this.yawObject.quaternion);
+
+        // Apply velocities
+        this.yawObject.position.x += horizontalVelocity.x * delta;
+        this.yawObject.position.z += horizontalVelocity.z * delta;
         this.yawObject.position.y += this.velocity.y * delta;
 
-        // Basic ground collision
-        if (this.yawObject.position.y < this.PLAYER_HEIGHT) {
+        // Ground Collision
+        if (this.yawObject.position.y <= this.PLAYER_HEIGHT) {
             this.velocity.y = 0;
             this.yawObject.position.y = this.PLAYER_HEIGHT;
             this.canJump = true;
