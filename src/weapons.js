@@ -24,14 +24,14 @@ export class WeaponSystem {
             {
                 name: 'AR-17 Vanguard',
                 type: 'rifle',
-                damage: 22,
+                damage: 28,
                 headshotMultiplier: 2,
-                clipSize: 30,
-                currentClip: 30,
-                totalAmmo: 120,
-                fireRate: 650, // RPM
+                clipSize: 25,
+                currentClip: 25,
+                totalAmmo: 75,
+                fireRate: 700, // RPM
                 lastFireTime: 0,
-                reloadTime: 2500, // ms
+                reloadTime: 2000, // ms
                 isReloading: false,
                 isAutomatic: true
             },
@@ -40,14 +40,14 @@ export class WeaponSystem {
                 type: 'shotgun',
                 damage: 15, // per pellet
                 pellets: 8,
-                spread: 0.1,
-                headshotMultiplier: 1.5,
-                clipSize: 7,
-                currentClip: 7,
-                totalAmmo: 28,
+                spread: 0.087, // ~5 degrees (tan(5deg) is approx 0.087)
+                headshotMultiplier: 1.46, // approx (22/15)
+                clipSize: 6,
+                currentClip: 6,
+                totalAmmo: 24,
                 fireRate: 70, // RPM
                 lastFireTime: 0,
-                reloadTime: 3500, // ms
+                reloadTime: 2500, // ms
                 isReloading: false,
                 isAutomatic: false
             }
@@ -92,6 +92,11 @@ export class WeaponSystem {
             if (e.code === 'Digit1') this.switchWeapon(0);
             if (e.code === 'Digit2') this.switchWeapon(1);
             if (e.code === 'Digit3') this.switchWeapon(2);
+        });
+
+        // Listen for bot firing
+        window.addEventListener('bot-fired', (e) => {
+            this.createTracer(e.detail.start, e.detail.end, 0xff0000);
         });
 
         // Add Hit Marker to DOM
@@ -195,7 +200,7 @@ export class WeaponSystem {
             if (target && target.userData.isShootable) {
                 const isHeadshot = hit.object.name === "Head";
                 const damage = isHeadshot ? weapon.damage * weapon.headshotMultiplier : weapon.damage;
-                this.handleHit(target, damage);
+                this.handleHit(target, damage, hit.point);
                 this.showHitMarker();
             }
             
@@ -235,12 +240,15 @@ export class WeaponSystem {
         }, 150);
     }
 
-    handleHit(object, damage) {
+    handleHit(object, damage, point) {
         if (object.userData.health === undefined) return;
         
         object.userData.health -= damage;
         console.log(`${object.name} hit! Damage: ${damage}. Health: ${object.userData.health}`);
         
+        // Show damage number
+        this.ui.showDamageNumber(point, damage, this.camera);
+
         // Visual feedback on the object
         const meshes = [];
         object.traverse(child => { if(child.isMesh) meshes.push(child); });
@@ -259,7 +267,10 @@ export class WeaponSystem {
 
         if (object.userData.health <= 0) {
             // Dispatch event for score
-            window.dispatchEvent(new CustomEvent('enemy-killed', { detail: { name: object.name } }));
+            const weapon = this.weapons[this.currentWeaponIndex];
+            window.dispatchEvent(new CustomEvent('enemy-killed', { 
+                detail: { name: object.name, weapon: weapon.name } 
+            }));
             
             setTimeout(() => {
                 this.scene.remove(object);
@@ -267,14 +278,15 @@ export class WeaponSystem {
         }
     }
 
-    createTracer(start, end) {
+    createTracer(start, end, color = 0x00ffff) {
         const muzzleOffset = new THREE.Vector3(0.2, -0.2, -0.5);
         muzzleOffset.applyQuaternion(this.camera.quaternion);
-        const muzzlePos = this.camera.position.clone().add(muzzleOffset);
+        // If it's a bot, start position is already provided
+        const startPos = (color === 0x00ffff) ? this.camera.position.clone().add(muzzleOffset) : start;
 
-        const points = [muzzlePos, end.clone()];
+        const points = [startPos, end.clone()];
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const material = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 });
+        const material = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.8 });
         const line = new THREE.Line(geometry, material);
         
         this.scene.add(line);

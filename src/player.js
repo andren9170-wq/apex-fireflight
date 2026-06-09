@@ -125,33 +125,28 @@ export class Player {
         }
     }
 
-    takeDamage(amount) {
+    takeDamage(amount, attacker = 'Bot') {
         if (this.isDead) return;
         this.health -= amount;
         this.ui.updateHealth(Math.max(0, this.health));
         
         if (this.health <= 0) {
-            this.die();
+            this.die(attacker);
         }
     }
 
-    die() {
+    die(attacker) {
         this.isDead = true;
         console.log("Player Died!");
-        // Notify game to increment deaths
-        window.dispatchEvent(new CustomEvent('player-died'));
-        
-        setTimeout(() => {
-            this.respawn();
-        }, 3000);
+        window.dispatchEvent(new CustomEvent('player-died', { detail: { attacker: attacker } }));
     }
 
-    respawn() {
+    respawn(position) {
         this.health = 100;
         this.isDead = false;
         this.ui.updateHealth(this.health);
-        this.yawObject.position.set(0, this.PLAYER_HEIGHT, 0); // Spawn at center
+        this.yawObject.position.copy(position);
         this.velocity.set(0, 0, 0);
-        console.log("Player Respawned");
+        console.log("Player Respawned at", position);
     }
 }

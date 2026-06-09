@@ -8,21 +8,26 @@ export class Bot {
         this.health = 100;
         this.isDead = false;
         
-        this.moveSpeed = 3.0;
-        this.fireRate = 1000; // ms
+        this.moveSpeed = 3.5;
+        this.idleTime = 2000;
+        this.lastActionTime = performance.now();
+        this.state = 'idle'; // 'idle', 'moving', 'combat'
+        
+        this.detectionRange = 15; // Lead spec
+        this.accuracy = 0.3; // 30% accuracy
+        this.fireRate = 1000; // 1 shot per second
         this.lastFireTime = 0;
-        this.detectionRange = 30;
         
-        this.velocity = new THREE.Vector3();
         this.mesh = this.createMesh(position);
-        
-        this.targetPosition = this.getRandomPosition();
+        this.targetWaypoint = this.getRandomWaypoint();
     }
 
     createMesh(position) {
         const group = new THREE.Group();
         group.position.copy(position);
         group.name = "Bot-" + Math.floor(Math.random() * 1000);
+
+        // Body
         const bodyGeom = new THREE.BoxGeometry(0.6, 1.2, 0.4);
         const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
         const body = new THREE.Mesh(bodyGeom, bodyMat);
@@ -42,24 +47,24 @@ export class Bot {
 
         group.userData.isShootable = true;
         group.userData.health = 100;
-        group.userData.botInstance = this; // Reference back to this class
+        group.userData.botInstance = this;
 
         this.scene.add(group);
         return group;
     }
 
-    getRandomPosition() {
+    getRandomWaypoint() {
         return new THREE.Vector3(
-            (Math.random() - 0.5) * 60,
+            (Math.random() - 0.5) * 70,
             0,
-            (Math.random() - 0.5) * 40
+            (Math.random() - 0.5) * 50
         );
     }
 
     update(delta, playerPos) {
         if (this.isDead) return;
 
-        // Sync health from mesh userData (since WeaponSystem updates that)
+        // Sync health
         this.health = this.mesh.userData.health;
         if (this.health <= 0) {
             this.die();
@@ -67,40 +72,77 @@ export class Bot {
         }
 
         const distToPlayer = this.mesh.position.distanceTo(playerPos);
+        const now = performance.now();
 
-        // Move towards target position
-        const dirToTarget = this.targetPosition.clone().sub(this.mesh.position).normalize();
-        this.mesh.position.add(dirToTarget.multiplyScalar(this.moveSpeed * delta));
-
-        if (this.mesh.position.distanceTo(this.targetPosition) < 1) {
-            this.targetPosition = this.getRandomPosition();
-        }
-
-        // Shooting logic
         if (distToPlayer < this.detectionRange) {
-            // Look at player
+            this.state = 'combat';
             this.mesh.lookAt(playerPos.x, this.mesh.position.y, playerPos.z);
             
-            const now = performance.now();
             if (now - this.lastFireTime > this.fireRate) {
                 this.shootAtPlayer();
                 this.lastFireTime = now;
+            }
+        } else {
+            if (this.state === 'combat') {
+                this.state = 'idle';
+                this.lastActionTime = now;
+            }
+
+            if (this.state === 'idle') {
+                if (now - this.lastActionTime > this.idleTime) {
+                    this.state = 'moving';
+                    this.targetWaypoint = this.getRandomWaypoint();
+                }
+            } else if (this.state === 'moving') {
+                const dir = this.targetWaypoint.clone().sub(this.mesh.position).normalize();
+                this.mesh.position.add(dir.multiplyScalar(this.moveSpeed * delta));
+                this.mesh.lookAt(this.targetWaypoint.x, this.mesh.position.y, this.targetWaypoint.z);
+
+                if (this.mesh.position.distanceTo(this.targetWaypoint) < 1) {
+                    this.state = 'idle';
+                    this.lastActionTime = now;
+                }
             }
         }
     }
 
     shootAtPlayer() {
-        console.log("Bot shooting at player!");
-        // Simulate hit with some probability
-        if (Math.random() > 0.7) {
-            this.player.takeDamage(10);
+        // Simple accuracy check
+        if (Math.random() < this.accuracy) {
             console.log("Bot hit player!");
+            this.player.takeDamage(10, this.mesh.name);
         }
+        
+        // Visual tracer for bot fire
+        window.dispatchEvent(new CustomEvent('bot-fired', { 
+            detail: { 
+                start: this.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0)),
+                end: this.player.yawObject.position.clone(),
+                attacker: this.mesh.name,
+                weapon: 'AR-17'
+            } 
+        }));
     }
 
     die() {
         this.isDead = true;
-        // The WeaponSystem handles removing the mesh from scene
-        console.log("Bot died");
+        // WeaponSystem handles mesh removal
+        
+        // Notify for respawn
+        setTimeout(() => {
+            this.respawn();
+        }, 3000);
+    }
+
+    respawn() {
+        this.health = 100;
+        this.isDead = false;
+        const pos = this.getRandomWaypoint();
+        this.mesh.position.copy(pos);
+        this.mesh.userData.health = 100;
+        this.scene.add(this.mesh);
+        this.state = 'idle';
+        this.lastActionTime = performance.now();
+        console.log("Bot respawned");
     }
 }
