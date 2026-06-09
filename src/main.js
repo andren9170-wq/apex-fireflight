@@ -4,6 +4,7 @@ import { Map } from './map.js';
 import { UI } from './ui.js';
 import { WeaponSystem } from './weapons.js';
 import { Bot } from './bot.js';
+import { GameLoop } from './game.js';
 
 class Game {
     constructor() {
@@ -18,28 +19,7 @@ class Game {
 
         this.clock = new THREE.Clock();
         
-        // Game State
-        this.kills = 0;
-        this.deaths = 0;
-        this.roundTime = 120; // 2 minutes
-        this.isRoundActive = true;
-        
-        this.initEventListeners();
         this.init();
-    }
-
-    initEventListeners() {
-        window.addEventListener('enemy-killed', (e) => {
-            this.kills++;
-            this.ui.updateScore(this.kills, this.deaths);
-            console.log(`Enemy Killed! Total Kills: ${this.kills}`);
-        });
-
-        window.addEventListener('player-died', () => {
-            this.deaths++;
-            this.ui.updateScore(this.kills, this.deaths);
-            console.log(`Player Died! Total Deaths: ${this.deaths}`);
-        });
     }
 
     async init() {
@@ -52,7 +32,6 @@ class Game {
         directionalLight.castShadow = true;
         this.scene.add(directionalLight);
 
-        // Add a second light for better coverage
         const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
         fillLight.position.set(-20, 30, -20);
         this.scene.add(fillLight);
@@ -62,10 +41,11 @@ class Game {
         this.map = new Map(this.scene);
         this.weapons = new WeaponSystem(this.scene, this.camera, this.ui);
         this.player = new Player(this.camera, this.scene, this.weapons, this.ui);
+        this.gameLoop = new GameLoop(this.ui, this.player, this.scene);
 
         // Bots
         this.bots = [];
-        this.spawnBots(5);
+        this.spawnBots(3);
 
         // Handle window resize
         window.addEventListener('resize', () => {
@@ -73,6 +53,9 @@ class Game {
             this.camera.updateProjectionMatrix();
             this.renderer.setSize(window.innerWidth, window.innerHeight);
         });
+
+        // Start game
+        this.gameLoop.start();
 
         this.animate();
     }
@@ -94,37 +77,14 @@ class Game {
         
         const delta = this.clock.getDelta();
         
-        if (this.isRoundActive) {
-            this.roundTime -= delta;
-            if (this.roundTime <= 0) {
-                this.roundTime = 0;
-                this.isRoundActive = false;
-                this.endRound();
-            }
-            this.ui.updateTimer(Math.ceil(this.roundTime));
-        }
-        
+        if (this.gameLoop) this.gameLoop.update(delta);
         if (this.player) this.player.update(delta);
         if (this.weapons) this.weapons.update(delta);
         
         const playerPos = this.player ? this.player.yawObject.position : new THREE.Vector3();
         this.bots.forEach(bot => bot.update(delta, playerPos));
         
-        // Filter out dead bots
-        this.bots = this.bots.filter(bot => !bot.isDead);
-        // Respawn bots if needed
-        if (this.bots.length < 5) {
-            this.spawnBots(1);
-        }
-
         this.renderer.render(this.scene, this.camera);
-    }
-
-    endRound() {
-        console.log("Round Ended!");
-        alert(`Round Over! Final Score: K: ${this.kills} | D: ${this.deaths}`);
-        // Reset or something
-        location.reload(); 
     }
 }
 
